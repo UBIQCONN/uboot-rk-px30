@@ -650,6 +650,10 @@ static int display_init(struct display_state *state)
 #endif
 	}
 
+	if (conn_state->bridge) {
+		video_bridge_attach(conn_state->bridge->dev);
+	}
+
 	if (ret)
 		goto deinit;
 
@@ -1209,7 +1213,6 @@ static struct rockchip_panel *rockchip_of_find_panel(struct udevice *dev)
 				goto found;
 		}
 	}
-
 	return NULL;
 
 found:
@@ -1389,7 +1392,6 @@ static int rockchip_display_probe(struct udevice *dev)
 			printf("Warn: can't find connect driver\n");
 			continue;
 		}
-
 		conn = (const struct rockchip_connector *)dev_get_driver_data(conn_dev);
 
 		phy = rockchip_of_find_phy(conn_dev);
