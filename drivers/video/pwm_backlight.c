@@ -121,7 +121,7 @@ static int pwm_backlight_ofdata_to_platdata(struct udevice *dev)
 					   "power-supply", &priv->reg);
 	if (ret)
 		debug("%s: Cannot get power supply: ret=%d\n", __func__, ret);
-	ret = gpio_request_by_name(dev, "enable-gpios", 0, &priv->enable,
+	ret = gpio_request_by_name(dev, "enable", 0, &priv->enable,
 				   GPIOD_IS_OUT);
 	if (ret) {
 		debug("%s: Warning: cannot get enable GPIO: ret=%d\n",
@@ -129,6 +129,7 @@ static int pwm_backlight_ofdata_to_platdata(struct udevice *dev)
 		if (ret != -ENOENT)
 			return ret;
 	}
+	
 	ret = dev_read_phandle_with_args(dev, "pwms", "#pwm-cells", 0, 0,
 					 &args);
 	if (ret) {
