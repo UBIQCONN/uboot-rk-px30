@@ -33,3 +33,12 @@ config VIDEO_BRIDGE_ANALOGIX_ANX6345
 	help
 	 The Analogix ANX6345 is RGB-to-DP converter. It enables an eDP LCD
 	 panel to be connected to an parallel LCD interface.
+
+
+config VIDEO_BRIDGE_TOSHIBA_TC358770
+	bool "Support Toshiba eDP->MIPI bridge"
+	depends on VIDEO_BRIDGE
+	select DM_I2C
+	help
+	 The Toshiba TC358770 is eDP->MIPI DSI converter. It enables an eDP LCD
+	 panel to be connected to an MIPI DSI LCD interface.
