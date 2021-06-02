@@ -43,6 +43,7 @@ struct tc358770_priv {
 	u32			rev;
 	struct udevice *vcc1v8_supply;
 	struct udevice *vcc1v2_supply;
+	struct gpio_desc enable;
 };
 
 
@@ -449,7 +450,8 @@ static int tc_dp_phy_plls(struct udevice *dev)
 	if (ret)
 		return ret;
 
-	tc358770_write(dev, PXL_PLLPARAM, 0x00228236);
+/*	tc358770_write(dev, PXL_PLLPARAM, 0x00228236);  */
+	tc358770_write(dev, PXL_PLLPARAM, 0x0022823a);
 
 	/* Force PLL parameter update and disable bypass */
 	return tc_pllupdate(dev, PXL_PLLCTRL);
@@ -780,7 +782,7 @@ static int tc_set_video_mode(struct udevice *dev,
 	 * sync signals
 	 */
 	ret = tc358770_write(dev, VPCTRL0,
-			   FIELD_PREP(VSDELAY, 0x108) |
+			   FIELD_PREP(VSDELAY, 0x200) |
 			   OPXLFMT_RGB666 | FRMSYNC_DISABLED | MSF_DISABLED);
 	if (ret)
 		return ret;
@@ -1110,6 +1112,13 @@ static int tc358770_attach(struct udevice *dev)
 		regulator_set_enable(priv->vcc1v2_supply, 1);
 	}	
 
+	if (priv->enable.dev) {
+		printf("%s %d %d\n", __func__, __LINE__, dm_gpio_get_value(&priv->enable));
+		dm_gpio_set_dir_flags(&priv->enable, GPIOD_IS_OUT | GPIOD_IS_OUT_ACTIVE);
+	/*	ret = dm_gpio_set_value(&priv->enable, 1);   */
+		printf("%s %d %d\n", __func__, __LINE__, dm_gpio_get_value(&priv->enable));
+	}
+
 	return video_bridge_set_active(dev, true);
 }
 
@@ -1137,6 +1146,14 @@ static int tc358770_probe(struct udevice *dev)
 		return ret;
 	}
 
+	ret = gpio_request_by_name(dev, "enable-gpios", 0, &priv->enable,
+				   GPIOD_IS_OUT );
+	if (ret) {
+		debug("%s: Could not decode reset-gpios (%d)\n", __func__, ret);
+		if (ret != -ENOENT)
+			return ret;
+	}
+	
 	bridge->dev = dev;
 
 	tc_set_dsi_configuration(dev);

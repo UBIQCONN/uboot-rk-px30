@@ -63,8 +63,12 @@ static int pwm_backlight_enable(struct udevice *dev)
 		return ret;
 	mdelay(10);
 
-	if (dm_gpio_is_valid(&priv->enable))
-		dm_gpio_set_value(&priv->enable, 1);
+	if (dm_gpio_is_valid(&priv->enable)){
+		printf("%s %d %d\n", __func__, __LINE__, dm_gpio_get_value(&priv->enable));
+		dm_gpio_set_dir_flags(&priv->enable, GPIOD_IS_OUT | GPIOD_IS_OUT_ACTIVE);
+	/*	dm_gpio_set_value(&priv->enable, 1); */
+		printf("%s %d %d\n", __func__, __LINE__, dm_gpio_get_value(&priv->enable));
+	}	
 
 	return 0;
 }
@@ -117,12 +121,13 @@ static int pwm_backlight_ofdata_to_platdata(struct udevice *dev)
 	const u32 *cell;
 
 	debug("%s: start\n", __func__);
+	printf("%s %d\n", __func__, __LINE__);
 	ret = uclass_get_device_by_phandle(UCLASS_REGULATOR, dev,
 					   "power-supply", &priv->reg);
 	if (ret)
 		debug("%s: Cannot get power supply: ret=%d\n", __func__, ret);
-	ret = gpio_request_by_name(dev, "enable", 0, &priv->enable,
-				   GPIOD_IS_OUT);
+	ret = gpio_request_by_name(dev, "enable-gpios", 0, &priv->enable,
+				   GPIOD_IS_OUT );
 	if (ret) {
 		debug("%s: Warning: cannot get enable GPIO: ret=%d\n",
 		      __func__, ret);
