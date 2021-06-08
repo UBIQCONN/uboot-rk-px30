@@ -377,6 +377,101 @@ static int tc_pllupdate(struct udevice *dev, unsigned int pllctrl)
 	return 0;
 }
 
+static int tc_pxl_pll_en(struct udevice *dev, u32 refclk, u32 pixelclock)
+{
+	int ret;
+	int i_pre, best_pre = 1;
+	int i_post, best_post = 1;
+	int div, best_div = 1;
+	int mul, best_mul = 1;
+	int delta, best_delta;
+	int post_div[] = {1, 2, 3, 5, 7};
+	int pre_div[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+	int best_pixelclock = 0;
+	int vco_hi = 0;
+	u32 pxl_pllparam;
+
+	best_delta = pixelclock;
+	/* Loop over all possible ext_divs, skipping invalid configurations */
+	for (i_pre = 0; i_pre < ARRAY_SIZE(pre_div); i_pre++) {
+		/*
+		 * refclk / ext_pre_div should be in the 1 to 200 MHz range.
+		 * We don't allow any refclk > 200 MHz, only check lower bounds.
+		 */
+		if (refclk / pre_div[i_pre] < 1000000)
+			continue;
+		for (i_post = 0; i_post < ARRAY_SIZE(post_div); i_post++) {
+			for (div = 1; div <= 16; div++) {
+				u32 clk;
+				u64 tmp;
+
+				tmp = pixelclock * pre_div[i_pre] *
+				      post_div[i_post] * div;
+				do_div(tmp, refclk);
+				mul = tmp;
+
+				/* Check limits */
+				if ((mul < 1) || (mul > 128))
+					continue;
+
+				clk = (refclk / pre_div[i_pre] / div) * mul;
+				/*
+				 * refclk * mul / (ext_pre_div * pre_div)
+				 * should be in the 150 to 650 MHz range
+				 */
+				if ((clk > 650000000) || (clk < 150000000))
+					continue;
+
+				clk = clk / post_div[i_post];
+				delta = clk - pixelclock;
+
+				if (abs(delta) < abs(best_delta)) {
+					best_pre = i_pre;
+					best_post = i_post;
+					best_div = div;
+					best_mul = mul;
+					best_delta = delta;
+					best_pixelclock = clk;
+				}
+			}
+		}
+	}
+	if (best_pixelclock == 0) {
+		dev_err(tc->dev, "Failed to calc clock for %d pixelclock\n",
+			pixelclock);
+		return -EINVAL;
+	}
+
+	/* if VCO >= 300 MHz */
+	if (refclk / pre_div[best_pre] / best_div * best_mul >= 300000000)
+		vco_hi = 1;
+	/* see DS */
+	if (best_div == 16)
+		best_div = 0;
+	if (best_mul == 128)
+		best_mul = 0;
+
+	/* Power up PLL and switch to bypass */
+	ret = tc358770_write(dev, PXL_PLLCTRL, PLLBYP | PLLEN);
+	if (ret)
+		return ret;
+
+	pxl_pllparam  = vco_hi << 24; /* For PLL VCO >= 300 MHz = 1 */
+	pxl_pllparam |= pre_div[best_pre] << 20; /* External Pre-divider */
+	pxl_pllparam |= post_div[best_post] << 16; /* External Post-divider */
+	pxl_pllparam |= IN_SEL_REFCLK; /* Use RefClk as PLL input */
+	pxl_pllparam |= best_div << 8; /* Divider for PLL RefClk */
+	pxl_pllparam |= best_mul; /* Multiplier for PLL */
+
+	printf("PLL: %d clk  %x\n", refclk, pxl_pllparam);
+	ret = tc358770_write(dev, PXL_PLLPARAM, pxl_pllparam);
+	if (ret)
+		return ret;
+
+	/* Force PLL parameter update and disable bypass */
+	return tc_pllupdate(dev, PXL_PLLCTRL);
+}
+
 static int tc_pxl_pll_dis(struct udevice *dev)
 {
 	/* Enable PLL bypass, power down PLL */
@@ -442,6 +537,7 @@ static int tc_setup_main_link(struct udevice *dev)
 static int tc_dp_phy_plls(struct udevice *dev)
 {
 	int ret;
+	struct tc358770_priv *priv = dev_get_priv(dev);
 
 	tc358770_write(dev, DP_PHY_CTRL, 0x0000000F);
 
@@ -449,12 +545,17 @@ static int tc_dp_phy_plls(struct udevice *dev)
 	ret = tc_pllupdate(dev, DP0_PLLCTRL);
 	if (ret)
 		return ret;
-
+#if 0
 /*	tc358770_write(dev, PXL_PLLPARAM, 0x00228236);  */
 	tc358770_write(dev, PXL_PLLPARAM, 0x0022823a);
 
 	/* Force PLL parameter update and disable bypass */
 	return tc_pllupdate(dev, PXL_PLLCTRL);
+#endif
+	ret = tc_pxl_pll_en(dev, 19200000,
+			    1000 * priv->mode.clock);
+	return ret;
+
 }	
 
 static int tc_reset_enable_main_link(struct udevice *dev)
@@ -1115,7 +1216,7 @@ static int tc358770_attach(struct udevice *dev)
 	if (priv->enable.dev) {
 		printf("%s %d %d\n", __func__, __LINE__, dm_gpio_get_value(&priv->enable));
 		dm_gpio_set_dir_flags(&priv->enable, GPIOD_IS_OUT | GPIOD_IS_OUT_ACTIVE);
-	/*	ret = dm_gpio_set_value(&priv->enable, 1);   */
+		ret = dm_gpio_set_value(&priv->enable, 1);   
 		printf("%s %d %d\n", __func__, __LINE__, dm_gpio_get_value(&priv->enable));
 	}
 
@@ -1133,14 +1234,14 @@ static int tc358770_probe(struct udevice *dev)
 		return -EPROTONOSUPPORT;
 
 	ret = uclass_get_device_by_phandle(UCLASS_REGULATOR, dev,
-					   "vcc1v8-supply", &priv->vcc1v8_supply);
+					   "1vcc1v8-supply", &priv->vcc1v8_supply);
 	if (ret && ret != -ENOENT) {
 		printf("%s: Cannot get power supply: %d\n", __func__, ret);
 		return ret;
 	}
 
 	ret = uclass_get_device_by_phandle(UCLASS_REGULATOR, dev,
-					   "vcc1v2-supply", &priv->vcc1v2_supply);
+					   "1vcc1v2-supply", &priv->vcc1v2_supply);
 	if (ret && ret != -ENOENT) {
 		printf("%s: Cannot get power supply: %d\n", __func__, ret);
 		return ret;

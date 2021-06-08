@@ -203,7 +203,7 @@ struct drm_dp_link {
 #define PLLBYP				BIT(1)
 #define PLLEN				BIT(0)
 #define PXL_PLLPARAM		0x0914
-#define IN_SEL_REFCLK			(0 << 14)
+#define IN_SEL_REFCLK			(2 << 14)
 #define SYS_PLLPARAM		0x0918
 #define REF_FREQ_38M4			(0 << 8) /* 38.4 MHz */
 #define REF_FREQ_19M2			(1 << 8) /* 19.2 MHz */
