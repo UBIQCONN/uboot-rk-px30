@@ -1205,21 +1205,6 @@ static int tc358770_attach(struct udevice *dev)
 		printf("failed to attach dsi host: %d\n", ret);
 		return ret;
 	}
-
-	if (priv->vcc1v8_supply){
-		regulator_set_enable(priv->vcc1v8_supply, 1);
-	}	
-	if (priv->vcc1v2_supply){
-		regulator_set_enable(priv->vcc1v2_supply, 1);
-	}	
-
-	if (priv->enable.dev) {
-		printf("%s %d %d\n", __func__, __LINE__, dm_gpio_get_value(&priv->enable));
-		dm_gpio_set_dir_flags(&priv->enable, GPIOD_IS_OUT | GPIOD_IS_OUT_ACTIVE);
-		ret = dm_gpio_set_value(&priv->enable, 1);   
-		printf("%s %d %d\n", __func__, __LINE__, dm_gpio_get_value(&priv->enable));
-	}
-
 	return video_bridge_set_active(dev, true);
 }
 
@@ -1256,6 +1241,17 @@ static int tc358770_probe(struct udevice *dev)
 	}
 	
 	bridge->dev = dev;
+
+	if (priv->vcc1v8_supply){
+		regulator_set_enable(priv->vcc1v8_supply, 1);
+	}	
+	if (priv->vcc1v2_supply){
+		regulator_set_enable(priv->vcc1v2_supply, 1);
+	}	
+
+	if (priv->enable.dev) {
+		ret = dm_gpio_set_value(&priv->enable, 1);   
+	}
 
 	tc_set_dsi_configuration(dev);
 
