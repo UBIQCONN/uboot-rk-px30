@@ -884,7 +884,7 @@ static int tc_set_video_mode(struct udevice *dev,
 	 */
 	ret = tc358770_write(dev, VPCTRL0,
 			   FIELD_PREP(VSDELAY, 0x200) |
-			   OPXLFMT_RGB666 | FRMSYNC_DISABLED | MSF_DISABLED);
+			   OPXLFMT_RGB666 | FRMSYNC_DISABLED | MSF_ENABLE);
 	if (ret)
 		return ret;
 
@@ -961,13 +961,6 @@ static int tc_set_video_mode(struct udevice *dev,
 		dp0_syncval |= SYNCVAL_HS_POL_ACTIVE_LOW;
 
 	ret = tc358770_write(dev, DP0_SYNCVAL, dp0_syncval);
-	if (ret)
-		return ret;
-
-	ret = tc358770_write(dev, DPIPXLFMT,
-			   VS_POL_ACTIVE_LOW | HS_POL_ACTIVE_LOW |
-			   DE_POL_ACTIVE_HIGH | SUB_CFG_TYPE_CONFIG1 |
-			   DPI_BPP_RGB888);
 	if (ret)
 		return ret;
 
