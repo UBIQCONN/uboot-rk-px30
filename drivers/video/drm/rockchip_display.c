@@ -650,10 +650,6 @@ static int display_init(struct display_state *state)
 #endif
 	}
 
-	if (conn_state->bridge) {
-		video_bridge_attach(conn_state->bridge->dev);
-	}
-
 	if (ret)
 		goto deinit;
 
@@ -672,6 +668,10 @@ static int display_init(struct display_state *state)
 
 	if (conn_state->bridge)
 		rockchip_bridge_mode_set(conn_state->bridge, &conn_state->mode);
+
+	if (conn_state->bridge) {
+		video_bridge_attach(conn_state->bridge->dev);
+	}
 
 	if (crtc_funcs->init) {
 		ret = crtc_funcs->init(state);

@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <i2c.h>
 #include <edid.h>
+#include <clk.h>
 #include <video_bridge.h>
 #include <drm/drm_mipi_dsi.h>
 #include <linux/drm_dp_helper.h>
@@ -44,6 +45,7 @@ struct tc358770_priv {
 	struct udevice *vcc1v8_supply;
 	struct udevice *vcc1v2_supply;
 	struct gpio_desc enable;
+	struct clk refclk;
 };
 
 
@@ -495,7 +497,16 @@ static int tc_stream_clock_calc(struct udevice *dev)
 	 * M/N = f_STRMCLK / f_LSCLK
 	 *
 	 */
-	return tc358770_write(dev, DP0_VIDMNGEN1, 0xA8C0);
+	return tc358770_write(dev, DP0_VIDMNGEN1, 0x93A8);
+}
+
+static int tc_set_dsi_pre_configuration(struct udevice *dev)
+{
+
+	 tc358770_write(dev, DSI0_PPI_TX_RX_TA, 0x0008000B);
+	 tc358770_write(dev, DSI0_PPI_LPTXTIMECNT, 0x00000007);
+
+	 return 1;
 }
 
 static int tc_set_dsi_configuration(struct udevice *dev)
@@ -526,10 +537,40 @@ static int tc_set_dsi_configuration(struct udevice *dev)
 	 return 1;
 }
 
+static int tc_set_syspllparam(struct udevice *dev)
+{
+        unsigned long rate;
+	struct tc358770_priv *priv = dev_get_priv(dev);
+        
+	u32 pllparam = SYSCLK_SEL_LSCLK | LSCLK_DIV_2;
+
+        rate = clk_get_rate(&priv->refclk);
+        switch (rate) {
+        case 38400000:
+                pllparam |= REF_FREQ_38M4;
+                break;
+        case 26000000:
+                pllparam |= REF_FREQ_26M;
+                break;
+        case 19200000:
+                pllparam |= REF_FREQ_19M2;
+                break;
+        case 13000000:
+                pllparam |= REF_FREQ_13M;
+                break;
+        default:
+                debug("Invalid refclk rate: %lu Hz\n", rate);
+                return -EINVAL;
+        }
+
+        return tc358770_write(dev, SYS_PLLPARAM, pllparam);
+}
+
 static int tc_setup_main_link(struct udevice *dev)
 {
 	tc358770_write(dev, DP0_SRCCTRL, 0x0000C095);
-	tc358770_write(dev, SYS_PLLPARAM, 0x00000106);
+	tc_set_syspllparam(dev);
+/*	tc358770_write(dev, SYS_PLLPARAM, 0x00000206);*/
 
 	return 1;
 }
@@ -545,14 +586,7 @@ static int tc_dp_phy_plls(struct udevice *dev)
 	ret = tc_pllupdate(dev, DP0_PLLCTRL);
 	if (ret)
 		return ret;
-#if 0
-/*	tc358770_write(dev, PXL_PLLPARAM, 0x00228236);  */
-	tc358770_write(dev, PXL_PLLPARAM, 0x0022823a);
-
-	/* Force PLL parameter update and disable bypass */
-	return tc_pllupdate(dev, PXL_PLLCTRL);
-#endif
-	ret = tc_pxl_pll_en(dev, 19200000,
+	ret = tc_pxl_pll_en(dev, clk_get_rate(&priv->refclk),
 			    1000 * priv->mode.clock);
 	return ret;
 
@@ -884,7 +918,7 @@ static int tc_set_video_mode(struct udevice *dev,
 	 */
 	ret = tc358770_write(dev, VPCTRL0,
 			   FIELD_PREP(VSDELAY, 0x200) |
-			   OPXLFMT_RGB666 | FRMSYNC_DISABLED | MSF_ENABLE);
+			   OPXLFMT_RGB666 | FRMSYNC_DISABLED | MSF_ENABLED);
 	if (ret)
 		return ret;
 
@@ -996,6 +1030,8 @@ static int tc_stream_enable(struct udevice *dev)
 
 	printf("enable video stream\n");
 
+	tc_set_dsi_configuration(dev);
+
 	ret = tc_set_video_mode(dev, &priv->mode);
 	if (ret)
 		return ret;
@@ -1052,17 +1088,9 @@ static void tc358770_enable(struct udevice *dev)
 {
 	int ret;
 
-	ret = tc_setup_main_link(dev);
-	if (ret < 0) {
-		printf("failed to setup main link: %d\n", ret);
-		return;
-	}
+	tc_set_dsi_pre_configuration(dev);
 
-	ret = tc_dp_phy_plls(dev);
-	if (ret < 0) {
-		printf("failed to DP Phy and PLLs: %d\n", ret);
-		return;
-	}
+	usleep_range(80000, 80000);
 
 	ret = tc_reset_enable_main_link(dev);
 	if (ret < 0) {
@@ -1183,6 +1211,21 @@ static int tc358770_attach(struct udevice *dev)
 	struct mipi_dsi_device *dsi = &priv->dsi;
 	int ret;
 
+	ret = tc_setup_main_link(dev);
+	if (ret < 0) {
+		printf("failed to setup main link: %d\n", ret);
+		return ret;
+	}
+
+	ret = tc_dp_phy_plls(dev);
+	if (ret < 0) {
+		printf("failed to DP Phy and PLLs: %d\n", ret);
+		return ret;
+	}
+
+	tc_set_dsi_pre_configuration(dev);
+
+	usleep_range(30000, 60000);
 	mipi_dev = rockchip_of_find_dsi(dev);
 	host = dev_get_platdata(mipi_dev);
 
@@ -1233,6 +1276,12 @@ static int tc358770_probe(struct udevice *dev)
 			return ret;
 	}
 	
+	ret = clk_get_by_name(dev, "refclk", &priv->refclk);
+	if (ret < 0) {
+		debug("failed to get clkin: %d\n", ret);
+		return ret;
+	}
+
 	bridge->dev = dev;
 
 	if (priv->vcc1v8_supply){
@@ -1246,7 +1295,12 @@ static int tc358770_probe(struct udevice *dev)
 		ret = dm_gpio_set_value(&priv->enable, 1);   
 	}
 
-	tc_set_dsi_configuration(dev);
+	if (priv->enable.dev) {
+		ret = dm_gpio_set_value(&priv->enable, 0);   
+		usleep_range(50000, 60000);
+		ret = dm_gpio_set_value(&priv->enable, 1);   
+		usleep_range(50000, 60000);
+	}
 
 	return 0;
 }
@@ -1262,6 +1316,7 @@ static void tc358770_bridge_pre_enable(struct rockchip_bridge *bridge)
 	struct tc358770_priv *priv = dev_get_priv(dev);
 	int ret;
        
+	usleep_range(30000, 60000);
 	ret = tc358770_read(dev, TC_IDREG, &priv->rev);
         if (ret) {
                 printf("can not read device ID: %d\n", ret);

@@ -209,9 +209,9 @@ struct drm_dp_link {
 #define REF_FREQ_19M2			(1 << 8) /* 19.2 MHz */
 #define REF_FREQ_26M			(2 << 8) /* 26 MHz */
 #define REF_FREQ_13M			(3 << 8) /* 13 MHz */
-#define SYSCLK_SEL_LSCLK		(0 << 4)
-#define LSCLK_DIV_1			(0 << 0)
-#define LSCLK_DIV_2			(1 << 0)
+#define SYSCLK_SEL_LSCLK		(1 << 2)
+#define LSCLK_DIV_1			(1 << 0)
+#define LSCLK_DIV_2			(2 << 0)
 
 /* Test & Debug */
 #define TSTCTL			0x0a00
