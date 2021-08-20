@@ -42,3 +42,12 @@ config VIDEO_BRIDGE_TOSHIBA_TC358770
 	help
 	 The Toshiba TC358770 is eDP->MIPI DSI converter. It enables an eDP LCD
 	 panel to be connected to an MIPI DSI LCD interface.
+
+config VIDEO_BRIDGE_IT6151
+	bool "Support IT6151 eDP->MIPI bridge"
+	depends on VIDEO_BRIDGE
+	select DM_I2C
+	help
+	 The ITE IT6151FN is eDP->MIPI DSI converter. It enables an eDP LCD
+	 panel to be connected to an MIPI DSI LCD interface.
+
